@@ -1,0 +1,8 @@
+openai
+python-dotenv
+requests
+pip
+clang
+gremlinpython
+aiohttp
+async_timeout
