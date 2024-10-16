@@ -23,43 +23,67 @@ gremlin_client = client.Client('wss://example-opencv.gremlin.cosmos.azure.com:44
                                message_serializer=serializer.GraphSONSerializersV2d0())
 
 # Track the current file being parsed
-current_file = None
-file_lines_mapping = []  # Store the mapping from line number to file info
+translation_unit_main_file = None # Translation unit name
+translation_unit_files = []  # Store the mapping from line number to file info
 
 # Parse the .i file to extract #line information and track it
 def parse_i_file_for_line_info(i_file):
-    global file_lines_mapping
-    global module_name
+    processed_files = set()  # Set to track file IDs
+
+    global translation_unit_files
+    global translation_unit_main_file
 
     with open(i_file, 'r') as f:
         lines = f.readlines()
 
     for i, line in enumerate(lines, start=1):
         match = re.match(r'#line (\d+) "(.*)"', line)
-        if match:
-            line_number = int(match.group(1))
-            file_path = os.path.relpath(match.group(2), opencv_source_folder)
-            file_lines_mapping.append((i, line_number, file_path))
+        if not match:
+            continue
+            
+        line_number = int(match.group(1))
+        file_path = os.path.relpath(match.group(2), opencv_source_folder)
 
-    module_name = file_lines_mapping[0][2].replace(os.path.sep, '_')
+        #if "Program Files" in file_path:
+        #    continue
 
-# Get the actual file and line number for a given cursor
-def get_actual_file_and_line(cursor_line):
-    actual_file = None
-    actual_line = None
+        translation_unit_files.append((i, line_number, file_path))
+        if translation_unit_main_file is None:
+            translation_unit_main_file = get_id(file_path)
+        
+        # Add the file vertex with its ID
+        if file_path not in processed_files:
+            add_vertex_to_gremlin('File', {"name": os.path.basename(file_path), "path": file_path}, file_path)
+            processed_files.add(file_path)
 
-    for line_info in reversed(file_lines_mapping):
-        directive_line, original_line, file_path = line_info
+last_checked_index = 0  # Initialize the global variable
+
+# Get the file and line number for a given cursor
+def get_file_and_line(cursor):
+    cursor_line = cursor.location.line
+    global last_checked_index
+    file_id = None
+    file_line = None
+
+    for i in range(last_checked_index, len(translation_unit_files)):
+        directive_line, original_line, file_id = translation_unit_files[i]
         if cursor_line >= directive_line:
             line_offset = cursor_line - directive_line
-            actual_file = file_path
-            actual_line = original_line + line_offset
-            break
+            file_line = original_line + line_offset
+            last_checked_index = i 
+        else:
+            break  # Stop when the cursor_line no longer matches or is less than directive_line
 
-    if actual_file is not None and "Program Files" in actual_file:
-        return None, None
+    return file_id, file_line
 
-    return actual_file, actual_line
+# Get id of a cursor
+def get_id(cursor_or_file_path):
+    if isinstance(cursor_or_file_path, clang.cindex.Cursor):
+        usr = cursor_or_file_path.get_usr()
+        if usr:
+            usr = usr.replace('#', '_')
+        return usr
+    return cursor_or_file_path.replace(os.path.sep, '_')
 
 def vertex_exists(cursor):
     query = "g.V().has('id', id).count()"
@@ -74,7 +98,7 @@ def vertex_exists(cursor):
 # Add vertex to Gremlin database
 def add_vertex_to_gremlin(label, properties, cursor):
     properties["id"] = get_id(cursor)
-    properties["module"] = module_name
+    properties["module"] = translation_unit_main_file
 
     properties_pairs = [(key, value) for key, value in properties.items()]
     query = "g.addV(label)"
@@ -108,45 +132,6 @@ def add_edge_to_gremlin(from_cursor, edge_label, to_cursor, property_key=None, p
 
     gremlin_client.submit(query, bindings)
 
-# Get id of a cursor
-def get_id(cursor):
-    usr = cursor.get_usr()
-    if usr:
-        usr = usr.replace('#', '_')
-    return usr
-
-# Extract namespace and classes
-def extract_namespace_and_classes(cursor):
-    actual_file = None
-    entities = []
-    current = cursor.semantic_parent
-
-    # Walk up the hierarchy, extracting namespaces and class/struct names
-    while current is not None:
-        if current.kind == CursorKind.NAMESPACE:
-            if current.spelling:  # Normal namespace
-                entities.insert(0, current.spelling)
-            else:  # Anonymous namespace
-                if not actual_file:
-                    actual_file, _ = get_actual_file_and_line(cursor.location.line)
-                entities.insert(0, f"anonymous_{actual_file.replace(os.path.sep, '_')}")
-        elif current.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL, CursorKind.UNION_DECL):
-            # Add class/struct/union names
-            entities.insert(0, current.spelling)
-        
-        current = current.semantic_parent
-
-    return "::".join(entities)
-
-# Extract parameters
-def extract_parameters(cursor):
-    parameters = []
-    for arg in cursor.get_arguments():
-        param_name = arg.spelling
-        param_type = arg.type.spelling
-        parameters.append({"type": param_type, "name": param_name})
-    return parameters
-
 # Extract access specifier
 def extract_access_specifier(cursor):
     access_specifier_map = {
@@ -156,18 +141,25 @@ def extract_access_specifier(cursor):
     }
     return access_specifier_map.get(cursor.access_specifier, "private")
 
+# Process namespace
+def process_namespace(cursor):
+    namespace_info = {
+        "name": cursor.spelling if cursor.spelling else f"anonymous_{get_id(cursor)}",
+    }
+
+    add_vertex_to_gremlin('Namespace', namespace_info, cursor)
+
+METHOD_KINDS = {CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR, CursorKind.DESTRUCTOR, CursorKind.CONVERSION_FUNCTION}
+
 # Process class or struct
-def process_class_or_struct(cursor, actual_file, actual_line):
+def process_class_or_struct(cursor):
     kind = "class" if cursor.kind == CursorKind.CLASS_DECL else "struct"
 
     class_info = {
         "name": cursor.spelling,
         "kind": kind,
-        "access_specifier": extract_access_specifier(cursor),
-        "namespace": extract_namespace_and_classes(cursor),
-        "file": actual_file,
-        "line_number": actual_line,
-        "is_definition": cursor.is_definition()
+        #"access_specifier": extract_access_specifier(cursor),
+        #"is_definition": cursor.is_definition()
     }
 
     add_vertex_to_gremlin(kind.capitalize(), class_info, cursor)
@@ -176,47 +168,31 @@ def process_class_or_struct(cursor, actual_file, actual_line):
     for base in cursor.get_children():
         if base.kind == CursorKind.CXX_BASE_SPECIFIER:
             base_class_cursor = base.type.get_declaration()
-
-            # Check for the access specifier
-            access_specifier_map = {
-                clang.cindex.AccessSpecifier.PUBLIC: 'public',
-                clang.cindex.AccessSpecifier.PROTECTED: 'protected',
-                clang.cindex.AccessSpecifier.PRIVATE: 'private'
-            }
-            access_specifier = access_specifier_map.get(base.access_specifier, 'private')
-
+            access_specifier = extract_access_specifier(base)
             # Add the 'inherits' edge with the access_specifier property
             add_edge_to_gremlin(cursor, 'inherits', base_class_cursor, 'access_specifier', access_specifier)
 
-
-    METHOD_KINDS = {CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR, CursorKind.DESTRUCTOR, CursorKind.CONVERSION_FUNCTION}
-
     # Process methods, including constructors and conversion functions, and member variables
-    for child in cursor.get_children():
-        actual_file, actual_line = get_actual_file_and_line(child.location.line)  # Optimized with already known file
-        
+    for child in cursor.get_children():        
         if child.kind in METHOD_KINDS:
-            process_function(child, actual_file, actual_line, cursor)
+            process_function(child)
+            add_edge_to_gremlin(cursor, 'contains', child)
         elif child.kind == CursorKind.FIELD_DECL:
             variable_info = {
                 "name": child.spelling,
                 "type": child.type.spelling,
-                "access_specifier": extract_access_specifier(child),
-                "file": actual_file,
-                "line_number": actual_line
+                "access_specifier": extract_access_specifier(child)
             }
 
             # Add the variable vertex with custom ID
             add_vertex_to_gremlin('Variable', variable_info, child)
             add_edge_to_gremlin(cursor, 'contains', child)
+        # TODO: add inner classes/structs here?
 
-def process_union(cursor, actual_file, actual_line):
+def process_union(cursor):
     union_info = {
         "name": cursor.spelling,
-        "kind": "union",
-        "namespace": extract_namespace_and_classes(cursor),
-        "file": actual_file,
-        "line_number": actual_line
+        "kind": "union"
     }
 
     add_vertex_to_gremlin('Union', union_info, cursor)
@@ -226,68 +202,69 @@ def process_union(cursor, actual_file, actual_line):
         if child.kind == CursorKind.FIELD_DECL:
             field_info = {
                 "name": child.spelling,
-                "type": child.type.spelling,
-                "file": actual_file,
-                "line_number": child.location.line
+                "type": child.type.spelling, # TODO: or reference to a type?
             }
             add_vertex_to_gremlin('Field', field_info, child)
             add_edge_to_gremlin(cursor, 'contains', child)
 
 # Process function
-def process_function(cursor, actual_file, actual_line, class_cursor=None):
+def process_function(cursor):
     function_info = {
-        "name": cursor.spelling,
-        "return_type": cursor.result_type.spelling,
-        "namespace": extract_namespace_and_classes(cursor),
-        "file": actual_file,
-        "line_number": actual_line,
+        "name": cursor.spelling,        
+        "return_type": cursor.result_type.spelling, # TODO: reference to actual type? (can be clan.cindex.Type)
     }
 
     add_vertex_to_gremlin('Function', function_info, cursor)
 
-    if class_cursor:
-        add_edge_to_gremlin(class_cursor, 'contains', cursor)
-
 # Process enum
-def process_enum(cursor, actual_file, actual_line):
+def process_enum(cursor):
     enum_info = {
         "name": cursor.spelling,
-        "namespace": extract_namespace_and_classes(cursor),
-        "file": actual_file,
-        "line_number": actual_line
     }
 
     add_vertex_to_gremlin('Enum', enum_info, cursor)
 
     for child in cursor.get_children():
         if child.kind == CursorKind.ENUM_CONSTANT_DECL:
-            actual_file, actual_line = get_actual_file_and_line(child.location.line) #TODO: optimize, file is already known
-
             enum_value_info = {
                 "name": child.spelling,
-                "enum": cursor.spelling,
-                "file": actual_file,
-                "line_number": actual_line
             }
             add_vertex_to_gremlin('EnumValue', enum_value_info, child)
             add_edge_to_gremlin(cursor, 'contains', child)
 
+PARENT_KINDS = {CursorKind.NAMESPACE, CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL}
+
 # Traverse the AST
 def process_cursor(cursor):
-    if vertex_exists(cursor):
-        return
-    actual_file, actual_line = get_actual_file_and_line(cursor.location.line)
-    if not actual_file:
+    file_id, file_line = get_file_and_line(cursor)
+    if file_id is None:
         return
 
-    if cursor.kind == CursorKind.CLASS_DECL or cursor.kind == CursorKind.STRUCT_DECL:
-        process_class_or_struct(cursor, actual_file, actual_line)
-    elif cursor.kind == CursorKind.UNION_DECL:
-        process_union(cursor, actual_file, actual_line)
-    elif cursor.kind == CursorKind.FUNCTION_DECL:
-        process_function(cursor, actual_file, actual_line)
-    elif cursor.kind == CursorKind.ENUM_DECL:
-        process_enum(cursor, actual_file, actual_line)
+    processed = True
+    
+    if cursor.kind == CursorKind.NAMESPACE:
+        if not vertex_exists(cursor):
+            process_namespace(cursor)
+    else:      
+        if vertex_exists(cursor):
+            return
+
+        if cursor.kind == CursorKind.CLASS_DECL or cursor.kind == CursorKind.STRUCT_DECL:
+            process_class_or_struct(cursor)
+        elif cursor.kind == CursorKind.UNION_DECL:
+            process_union(cursor)
+        elif cursor.kind == CursorKind.FUNCTION_DECL:
+            process_function(cursor)
+        elif cursor.kind == CursorKind.ENUM_DECL:
+            process_enum(cursor)
+        else:
+            processed = False
+
+        if processed and cursor.semantic_parent and cursor.semantic_parent.kind in PARENT_KINDS:
+            add_edge_to_gremlin(cursor.semantic_parent, 'contains', cursor)
+
+    if processed:
+        add_edge_to_gremlin(file_id, 'contains', cursor, 'line', file_line)
 
     for child in cursor.get_children():
         process_cursor(child)
