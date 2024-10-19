@@ -72,27 +72,24 @@ def get_id(cursor, replacement_symbol = '_'):
                 id = f"{id}"
             else:
                 id = f"{id}@{get_file_id(cursor.location.file.name)}@{cursor.location.line}"
-    if not id:
-        raise ValueError("ID cannot be empty!")
     return id
 
 def vertex_exists(cursor):    
     query = "g.V().has('id', id).count()"
     bindings = {"id": get_id(cursor)}
-    return False
     # Execute the query and get the result
-    #result = gremlin_client.submit(query, bindings).all().result()
+    result = gremlin_client.submit(query, bindings).all().result()
     
     # Return True if the count is greater than 0, meaning the vertex exists
-    #return result[0] > 0
+    return result[0] > 0
 
 tu_cached = None
 
 # Add vertex to Gremlin database
-def add_vertex_to_gremlin(cursor, properties = {}):
+def add_vertex_to_gremlin(cursor, id, properties = {}):
     global tu_cached
 
-    properties["id"] = get_id(cursor)
+    properties["id"] = id
     properties["label"] = cursor.kind.name
     properties["usr"] = cursor.get_usr()
     properties["spelling"] = cursor.spelling
@@ -108,7 +105,7 @@ def add_vertex_to_gremlin(cursor, properties = {}):
         query += f".property('{key}', key_{i})"
         bindings[f"key_{i}"] = value
 
-    #gremlin_client.submit(query, bindings)
+    gremlin_client.submit(query, bindings)
 
 # Add edge to Gremlin database
 def add_edge_to_gremlin(from_cursor, edge_label, to_cursor, property_key=None, property_value=None):
@@ -129,8 +126,7 @@ def add_edge_to_gremlin(from_cursor, edge_label, to_cursor, property_key=None, p
 
     # Finalize the query
     query += ".from('from')"
-
-    #gremlin_client.submit(query, bindings)
+    gremlin_client.submit(query, bindings)
 
 #############################################
 ### 3. Adding properties for specific types
@@ -208,123 +204,161 @@ def get_conversion_function_properties(cursor):
 ### 4. Processing
 #############################################
 
-# Function to process cursor based on its kind
-def process_definition_cursor_as_vertex(cursor):
+cursor_vertex_processed_cache = set()
+
+# Add vertex for cursor
+def process_cursor_as_vertex(cursor):
+    global cursor_vertex_processed_cache
+
+    id = get_id(cursor)
+    if not id or id in cursor_vertex_processed_cache:
+        return
+    cursor_vertex_processed_cache.add(id)
+
     properties = {}
 
-    if cursor.kind.is_invalid():
-        raise ValueError('Invalid kind of cursor')
-    if cursor.kind.is_unexposed():
-        raise ValueError('Unexposed kind of cursor')
+    try:
+        if cursor.kind.is_declaration():
+            if cursor.is_definition():
+                if (cursor.kind is CursorKind.STRUCT_DECL or 
+                    cursor.kind is CursorKind.UNION_DECL or
+                    cursor.kind is CursorKind.CLASS_DECL or
+                    cursor.kind is CursorKind.ENUM_DECL):
+                    add_is_exported_property(cursor, properties)
+                elif cursor.kind is CursorKind.FIELD_DECL:
+                    properties = get_field_properties(cursor, properties)
+                elif cursor.kind is CursorKind.ENUM_CONSTANT_DECL:
+                    pass
+                elif cursor.kind is CursorKind.FUNCTION_DECL:
+                    add_is_exported_property(cursor, properties)
+                elif cursor.kind is CursorKind.VAR_DECL:
+                    add_is_static_storage_property(cursor, properties)
+                elif cursor.kind is CursorKind.PARM_DECL:
+                    pass
+                elif cursor.kind is CursorKind.TYPEDEF_DECL:
+                    pass
+                elif cursor.kind is CursorKind.CXX_METHOD:
+                    properties = get_member_function_properties(cursor)
+                elif cursor.kind is CursorKind.NAMESPACE:
+                    pass
+                elif cursor.kind is CursorKind.LINKAGE_SPEC:
+                    return
+                elif cursor.kind is CursorKind.CONSTRUCTOR:
+                    properties = get_constructor_properties(cursor)
+                elif cursor.kind is CursorKind.DESTRUCTOR:
+                    properties = get_destructor_properties(cursor)
+                elif cursor.kind is CursorKind.CONVERSION_FUNCTION:
+                    properties = get_conversion_function_properties(cursor)
+                elif (cursor.kind is CursorKind.TEMPLATE_TYPE_PARAMETER or
+                    cursor.kind is CursorKind.TEMPLATE_NON_TYPE_PARAMETER or
+                    cursor.kind is CursorKind.TEMPLATE_TEMPLATE_PARAMETER or
+                    cursor.kind is CursorKind.FUNCTION_TEMPLATE or
+                    cursor.kind is CursorKind.CLASS_TEMPLATE or
+                    cursor.kind is CursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION):
+                    pass
+                elif (cursor.kind is CursorKind.NAMESPACE_ALIAS or
+                    cursor.kind is CursorKind.USING_DIRECTIVE or
+                    cursor.kind is CursorKind.USING_DECLARATION or
+                    cursor.kind is CursorKind.TYPE_ALIAS_DECL):
+                    pass
+                else:
+                    return
 
-    if cursor.kind.is_declaration():
-        if (cursor.kind is CursorKind.STRUCT_DECL or 
-            cursor.kind is CursorKind.UNION_DECL or
-            cursor.kind is CursorKind.CLASS_DECL or
-            cursor.kind is CursorKind.ENUM_DECL):
-            add_is_exported_property(cursor, properties)
-        elif cursor.kind is CursorKind.FIELD_DECL:
-            properties = get_field_properties(cursor, properties)
-        elif cursor.kind is CursorKind.ENUM_CONSTANT_DECL:
+            add_vertex_to_gremlin(cursor, id, properties)
+        elif cursor.kind.is_reference():
             pass
-        elif cursor.kind is CursorKind.FUNCTION_DECL:
-            add_is_exported_property(cursor, properties)
-        elif cursor.kind is CursorKind.VAR_DECL:
-            add_is_static_storage_property(cursor, properties)
-        elif cursor.kind is CursorKind.PARM_DECL:
+        elif cursor.kind.is_expression():
             pass
-        elif cursor.kind is CursorKind.TYPEDEF_DECL:
+        elif cursor.kind.is_statement():
             pass
-        elif cursor.kind is CursorKind.CXX_METHOD:
-            properties = get_member_function_properties(cursor)
-        elif cursor.kind is CursorKind.NAMESPACE:
-            pass
-        elif cursor.kind is CursorKind.LINKAGE_SPEC:
-            return
-        elif cursor.kind is CursorKind.CONSTRUCTOR:
-            properties = get_constructor_properties(cursor)
-        elif cursor.kind is CursorKind.DESTRUCTOR:
-            properties = get_destructor_properties(cursor)
-        elif cursor.kind is CursorKind.CONVERSION_FUNCTION:
-            properties = get_conversion_function_properties(cursor)
-        elif (cursor.kind is CursorKind.TEMPLATE_TYPE_PARAMETER or
-            cursor.kind is CursorKind.TEMPLATE_NON_TYPE_PARAMETER or
-            cursor.kind is CursorKind.TEMPLATE_TEMPLATE_PARAMETER or
-            cursor.kind is CursorKind.FUNCTION_TEMPLATE or
-            cursor.kind is CursorKind.CLASS_TEMPLATE or
-            cursor.kind is CursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION):
-            pass
-        elif (cursor.kind is CursorKind.NAMESPACE_ALIAS or
-            cursor.kind is CursorKind.USING_DIRECTIVE or
-            cursor.kind is CursorKind.USING_DECLARATION or
-            cursor.kind is CursorKind.TYPE_ALIAS_DECL):
-            pass
-        else:
-            return
+    except Exception as e:
+        print(f"ERROR processing cursor at {cursor.location.file.name}:{cursor.location.line}: {e}")
 
-        add_vertex_to_gremlin(cursor, properties)
-    elif cursor.kind.is_reference():
-        pass
-    elif cursor.kind.is_expression():
-        pass
-    elif cursor.kind.is_statement():
-        pass
+    for child in cursor.get_children():
+        process_cursor_as_vertex(child)
 
-def process_definition_cursor_edges(cursor):
-    if cursor.kind.is_invalid():
-        raise ValueError('Invalid kind of cursor')
-    if cursor.kind.is_unexposed():
-        raise ValueError('Unexposed kind of cursor')
+cursor_edges_processed_cache = set()
 
-    if cursor.kind.is_declaration():
-        if (cursor.kind is CursorKind.CXX_METHOD or
-            cursor.kind is CursorKind.CONSTRUCTOR or
-            cursor.kind is CursorKind.DESTRUCTOR or
-            cursor.kind is CursorKind.CONVERSION_FUNCTION):
-            add_edge_to_gremlin(cursor.semantic_parent, 'contains_method', cursor.get_definition())
-        elif cursor.kind is CursorKind.FIELD_DECL:
-            add_edge_to_gremlin(cursor.semantic_parent, 'contains_field', cursor)
-        elif cursor.kind is CursorKind.PARM_DECL:
-            add_edge_to_gremlin(cursor.semantic_parent, 'contains_argument', cursor)
-        elif cursor.kind is CursorKind.ENUM_CONSTANT_DECL:
-            add_edge_to_gremlin(cursor.semantic_parent, 'contains_value', cursor)
-        #elif cursor.kind is CursorKind.TYPEDEF_DECL:
-            #tp = cursor.underlying_typedef_type.get_declaration()            
-    elif cursor.kind.is_reference():
-        if cursor.kind == CursorKind.CXX_BASE_SPECIFIER:
-            add_edge_to_gremlin(cursor.semantic_parent, 'inherits', cursor.referenced)
-    elif cursor.kind.is_expression():
-        pass
-    elif cursor.kind.is_statement():
-        pass
+# Add edges for cursor
+def process_cursor_edges(cursor):
+    id = get_id(cursor)
+    if id in cursor_edges_processed_cache:
+        return
+    cursor_edges_processed_cache.add(id)
+
+    try:
+        if cursor.kind.is_declaration():
+            if cursor.is_definition():
+                if (cursor.kind is CursorKind.STRUCT_DECL or 
+                    cursor.kind is CursorKind.UNION_DECL or
+                    cursor.kind is CursorKind.CLASS_DECL or
+                    cursor.kind is CursorKind.ENUM_DECL):
+                    if cursor.semantic_parent:
+                        if cursor.semantic_parent.kind == CursorKind.NAMESPACE:
+                            add_edge_to_gremlin(cursor.semantic_parent, 'contains', cursor)
+                        elif cursor.semantic_parent.kind in (CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL):
+                            add_edge_to_gremlin(cursor.semantic_parent, 'contains_inner', cursor)
+                elif (cursor.kind is CursorKind.CXX_METHOD or
+                    cursor.kind is CursorKind.CONSTRUCTOR or
+                    cursor.kind is CursorKind.DESTRUCTOR or
+                    cursor.kind is CursorKind.CONVERSION_FUNCTION):
+                    add_edge_to_gremlin(cursor.semantic_parent, 'contains_method', cursor.get_definition())
+                elif cursor.kind is CursorKind.FIELD_DECL:
+                    add_edge_to_gremlin(cursor.semantic_parent, 'contains_field', cursor)
+                elif cursor.kind is CursorKind.PARM_DECL:
+                    add_edge_to_gremlin(cursor.semantic_parent, 'contains_argument', cursor)
+                elif cursor.kind is CursorKind.ENUM_CONSTANT_DECL:
+                    add_edge_to_gremlin(cursor.semantic_parent, 'contains_value', cursor)
+                #elif cursor.kind is CursorKind.TYPEDEF_DECL:
+                    #tp = cursor.underlying_typedef_type.get_declaration()
+            else:
+                add_edge_to_gremlin(cursor, 'declares', cursor.canonical)
+        elif cursor.kind.is_reference():
+            if cursor.kind == CursorKind.CXX_BASE_SPECIFIER:
+                add_edge_to_gremlin(cursor.semantic_parent, 'inherits', cursor.referenced)
+        elif cursor.kind.is_expression():
+            pass
+        elif cursor.kind.is_statement():
+            pass
+    except Exception as e:
+        print(f"ERROR processing cursor edges at {cursor.location.file.name}:{cursor.location.line}: {e}")
+
+    for child in cursor.get_children():
+        process_cursor_edges(child)
 
 # Process translation unit 
 def process_translation_unit(tu):
     # create nodes
     for cursor in tu.cursor.walk_preorder():
         try:
-            if cursor.kind.is_translation_unit():
+            if cursor.location.file is None or "Program Files" in cursor.location.file.name:
                 pass
-            elif cursor.is_definition():
-                process_definition_cursor_as_vertex(cursor)
+            elif cursor.kind.is_invalid():
+                raise ValueError('Invalid kind of cursor')
+            elif cursor.kind.is_unexposed():
+                pass #raise ValueError('Unexposed kind of cursor') ?
+            elif cursor.kind.is_translation_unit():
+                pass
             else:
-                if cursor.kind.is_declaration():
-                    add_vertex_to_gremlin(cursor)
+                process_cursor_as_vertex(cursor)
         except Exception as e:
             print(f"ERROR processing cursor at {cursor.location.file.name}:{cursor.location.line}: {e}")
     
     # create edges
     for cursor in tu.cursor.walk_preorder():
         try:
-            if cursor.kind.is_translation_unit():
+            if cursor.location.file is None or "Program Files" in cursor.location.file.name:
                 pass
-            elif cursor.is_definition():
-                process_definition_cursor_edges(cursor)
+            elif cursor.kind.is_invalid():
+                raise ValueError('Invalid kind of cursor')
+            elif cursor.kind.is_unexposed():
+                pass #raise ValueError('Unexposed kind of cursor') ?
+            elif cursor.kind.is_translation_unit():
+                pass
             else:
-                if cursor.kind.is_declaration():
-                    add_edge_to_gremlin(cursor, 'declares', cursor.canonical)
+                process_cursor_edges(cursor)
         except Exception as e:
-            print(f"ERROR processing cursor at {cursor.location.file.name}:{cursor.location.line}: {e}")
+            print(f"ERROR processing cursor edges at {cursor.location.file.name}:{cursor.location.line}: {e}")
 
 #############################################
 ### 5. Main
