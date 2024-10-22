@@ -8,6 +8,8 @@ Using AST for **retrieval-augmented generation (RAG)** enables precise complete 
 
 Code AST is a graph structure, retrieved using **clang** libraries, and partially stored in **Microsoft Azure Graph Cosmos DB**.
 
+![Architecture](.assets/architecture.png)
+
 ## Table of Contents
 - [Overview](#overview)
 - [Setup](#setup)
