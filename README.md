@@ -52,7 +52,7 @@ Results of some testing with open-source C++ solutions.
 
 Input compilation unit: include/nlohmann/json.hpp
 
-1) User prompt: **what namespaces exist in this package?**
+**1) User prompt: what namespaces exist in this package?**
 
 Generated Gremlin Query:
  g.V().hasLabel('NAMESPACE').project('id', 'spelling').by(id).by('spelling')
@@ -74,7 +74,7 @@ Code Advisor Answer:
 
 **Conclusion**: Using AST as RAG mechanism all the namespaaces were found, classic RAG over files would be limited by the number of search results that RAG supports.  
 
-2) User prompt: **what classes have 'exception' substring in their identifiers ?**
+**2) User prompt: what classes have 'exception' substring in their identifiers ?**
 
 Generated Gremlin Query:
  g.V().hasLabel('CLASS_DECL', 'CLASS_TEMPLATE', 'CLASS_TEMPLATE_PARTIAL_SPECIALIZATION')
@@ -92,7 +92,7 @@ Code Advisor Answer:
 
 **Conclusion** 'Allowed Gremlin Steps' are important to mention in the system message when requesting to compose a query
 
-3) User prompt: **what classes inherit (also recursively) exception?**
+**3) User prompt: what classes inherit (also recursively) exception?**
 
 Generated Gremlin Query:
  g.V().hasLabel('CLASS_DECL').as('class')
@@ -115,8 +115,7 @@ These classes form an inheritance chain where `nlohmann::json_abi_v3_11_3::detai
 **Conclusion** I don't understand this one. The query has no string "exception". 
 **Conclusion** Recursive relations can be found.
 
-4) User prompt:
- list me all functions (including template) to_json overloads and list of their parameters
+**4) User prompt: list me all functions (including template) to_json overloads and list of their parameters**
 
 Generated Gremlin Query:
  g.V().hasLabel('FUNCTION_DECL', 'FUNCTION_TEMPLATE').has('spelling', 'to_json').as('function')
