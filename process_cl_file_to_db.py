@@ -1,3 +1,9 @@
+#############################################
+# This script allows processing of a single
+# C++ translation unit AST (abstract syntax tree) 
+# to an Azure Cosmos Graph DB.
+#############################################
+
 import clang.cindex
 from clang.cindex import CursorKind
 from gremlin_python.driver import client, serializer
@@ -7,12 +13,18 @@ import os
 #############################################
 ### 0. Input
 #############################################
+# Specify C++ compilation file to process, additional include folders it might require and defines.
+# Don't forget to specify COSMOS_DB_PRIMARY_KEY as an environment variable (you can use .env file)
+#############################################
 
 repo_path = "C:/Users/vakul/source/repos/json/"
 file_to_process = repo_path + "include/nlohmann/json.hpp"
 
 include_folders = f"{repo_path}include"
 defines = "_UNICODE;UNICODE;WIN32;_WINDOWS;_WIN32;STRICT;_MBCS;JSON_TEST_KEEP_MACROS;"
+
+cosmos_db_url = 'wss://cpp-codebase-playground.gremlin.cosmos.azure.com:443/'
+cosmos_db_username = "/dbs/codebase/colls/codebase-graph"
 
 def parse_input(include_folders, defines):
     args = []
@@ -42,8 +54,8 @@ load_dotenv()
 clang.cindex.Config.set_library_file('C:\\Program Files\\LLVM\\bin\\libclang.dll')
 
 # Set up Gremlin client
-gremlin_client = client.Client('wss://cpp-codebase-playground.gremlin.cosmos.azure.com:443/', 'g',
-                               username="/dbs/codebase/colls/codebase-graph",
+gremlin_client = client.Client(cosmos_db_url, 'g',
+                               username=cosmos_db_username,
                                password=os.getenv("COSMOS_DB_PRIMARY_KEY"),
                                message_serializer=serializer.GraphSONSerializersV2d0())
 

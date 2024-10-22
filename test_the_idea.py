@@ -1,3 +1,8 @@
+#############################################
+# This is an example file on how to use info about C++ translation unit
+# in your code chatbot agent
+#############################################
+
 import openai
 from gremlin_python.driver import client, serializer
 from dotenv import load_dotenv
@@ -59,13 +64,13 @@ def build_gremlin_query_system_message():
     
     # Base system message
     system_message = """
-    You are an expert in Azure Cosmos DB Gremlin query syntax. 
-    Your task is to strictly generate an efficient Gremlin query to help with the user prompt.
-    You are not to generate explanations or any other responses.
-    Your response will be used by another LLM to answer the user prompt, you only generate query to extract additional info for the main LLM. 
-    You have access to a graph database that represents a C++ codebase. 
-    The database consists of the following vertex types and their associated edge types:
-    """
+        You are an expert in Azure Cosmos DB Gremlin query syntax. 
+        Your task is to strictly generate an efficient Gremlin query to help with the user prompt.
+        You are not to generate explanations or any other responses.
+        Your response will be used by another LLM to answer the user prompt, you only generate query to extract additional info for the main LLM. 
+        You have access to a graph database that represents a C++ codebase. 
+        The database consists of the following vertex types and their associated edge types:
+        """
 
     # Add the relationship map and property map to the system message
     for label in relationship_map.keys():
@@ -78,16 +83,16 @@ def build_gremlin_query_system_message():
         - Your response should be an exact Gremlin query and nothing else.
         - The query should extract as little data as possible, do not extract all vertices or edges properties but only relevant ones, group them with their unique identifiers (id)
         - Allowed Gremlin Steps:
-    and, as, by, coalesce, constant
-    count, dedup, drop, executionProfile, fold
-    group, has, inject, is
-    limit, local, not, optional, or, order
-    path, project, properties, range
-    repeat, sample, select, store
-    TextP.startingWith(string), TextP.endingWith(string), TextP.containing(string), TextP.notStartingWith(string), TextP.notEndingWith(string), TextP.notContaining(string)
-    tree, unfold, union
-    V, E, out, in, both, outE, inE, bothE, outV, inV, bothV, otherV
-    where  
+            and, as, by, coalesce, constant
+            count, dedup, drop, executionProfile, fold
+            group, has, inject, is
+            limit, local, not, optional, or, order
+            path, project, properties, range
+            repeat, sample, select, store
+            TextP.startingWith(string), TextP.endingWith(string), TextP.containing(string), TextP.notStartingWith(string), TextP.notEndingWith(string), TextP.notContaining(string)
+            tree, unfold, union
+            V, E, out, in, both, outE, inE, bothE, outV, inV, bothV, otherV
+            where  
         """
     return system_message
 
@@ -124,18 +129,18 @@ def execute_gremlin_query(query):
 
 def generate_code_advisor_response(user_question, query_result):
     system_message = """
-    You are an expert codebase advisor. Your task is to help answer technical questions about the codebase.
-    The information you provide should be based on the data retrieved from the database in response to the user's query.
-    
-    Always tailor your response to the specific user question and the data provided.
-    
-    Guidelines for your response:
-    - Make sure your answer directly addresses the user's question.
-    - Use the database data to provide a precise and concise answer.
-    - If appropriate, list relevant information (such as classes, methods, or properties) in a simple and easy-parseable format.
-    - Do not add unnecessary details. Focus on answering the question clearly and succinctly.
-    - Your answer should be structured in a way that the user can easily understand and use.
-    """
+        You are an expert codebase advisor. Your task is to help answer technical questions about the codebase.
+        The information you provide should be based on the data retrieved from the database in response to the user's query.
+        
+        Always tailor your response to the specific user question and the data provided.
+        
+        Guidelines for your response:
+        - Make sure your answer directly addresses the user's question.
+        - Use the database data to provide a precise and concise answer.
+        - If appropriate, list relevant information (such as classes, methods, or properties) in a simple and easy-parseable format.
+        - Do not add unnecessary details. Focus on answering the question clearly and succinctly.
+        - Your answer should be structured in a way that the user can easily understand and use.
+        """
     
     # Combine the user question and query result for the context
     query_summary = f"User's question: {user_question}\nData retrieved from the database: {query_result}"
