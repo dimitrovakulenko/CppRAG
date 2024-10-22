@@ -4,7 +4,7 @@ This repository contains a prototype for an **AI-powered chatbot agent** that an
 
 **Microsoft Azure OpenAI**-based Chatbot generates answers based on Abstract Syntax Tree (AST) of a C++ compilation unit as the primary source of information. 
 
-Using AST for **retrieval-augmented generation (RAG)** enables precise complete answers about the codebase.
+Using AST for **retrieval-augmented generation (RAG)** enables **precise and complete** answers about the codebase.
 
 Code AST is a graph structure, retrieved using **clang** libraries, and partially stored in **Microsoft Azure Graph Cosmos DB**.
 
