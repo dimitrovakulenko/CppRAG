@@ -1,4 +1,4 @@
-## C++ Codebase AI Advisor with AST-based RAG
+## C++ Codebase AI Agent with AST-based RAG
 
 This repository contains a prototype for an **AI-powered chatbot agent** that answers questions about a C++ codebase. 
 
