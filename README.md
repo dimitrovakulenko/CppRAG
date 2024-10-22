@@ -11,8 +11,8 @@ Code AST is a graph structure, retrieved using **clang** libraries, and partiall
 ![Architecture](.assets/architecture.png)
 
 ## Table of Contents
+
 - [Overview](#overview)
-- [How It Works](#how-it-works)
 - [Tests](#tests)
 - [Usage](#usage)
 - [Setup](#setup)
@@ -25,8 +25,6 @@ This project consists of two main components:
 1. **AST Processing & Storage**: A Python script that processes C++ source files using `clang`, extracts the AST (Abstract Syntax Tree), and stores a partial representation of the AST in **Azure Cosmos DB (Gremlin API)**.
 
 2. **AI Chatbot Agent**: A Python-based chatbot agent that answers user questions about the C++ codebase by querying the AST stored in **Azure Cosmos DB** and using **Azure OpenAI** models to generate accurate answers.
-
-## How It Works
 
 ### 1. **AST Processor (process_cl_file_to_db.py)**:
    
@@ -54,8 +52,7 @@ Results of some testing with open-source C++ solutions.
 
 Input compilation unit: include/nlohmann/json.hpp
 
-1) User prompt:
- what namespaces exist in this package?
+1) User prompt: **what namespaces exist in this package?**
 
 Generated Gremlin Query:
  g.V().hasLabel('NAMESPACE').project('id', 'spelling').by(id).by('spelling')
@@ -75,10 +72,9 @@ Code Advisor Answer:
 10. `nlohmann::json_abi_v3_11_3::literals::json_literals`
 11. `std`
 
-*Conclusion*: Using AST as RAG mechanism all the namespaaces were found, classic RAG over files would be limited by the number of search results that RAG supports.  
+**Conclusion**: Using AST as RAG mechanism all the namespaaces were found, classic RAG over files would be limited by the number of search results that RAG supports.  
 
-2) User prompt:
- what classes have 'exception' substring in their identifiers ?
+2) User prompt: **what classes have 'exception' substring in their identifiers ?**
 
 Generated Gremlin Query:
  g.V().hasLabel('CLASS_DECL', 'CLASS_TEMPLATE', 'CLASS_TEMPLATE_PARTIAL_SPECIALIZATION')
@@ -94,10 +90,9 @@ Code Advisor Answer:
 1. `nlohmann::json_abi_v3_11_3::detail::exception`
 2. `std::exception`
 
-*Conclusion* 'Allowed Gremlin Steps' are important to mention in the system message when requesting to compose a query
+**Conclusion** 'Allowed Gremlin Steps' are important to mention in the system message when requesting to compose a query
 
-3) User prompt:
- what classes inherit (also recursively) exception?
+3) User prompt: **what classes inherit (also recursively) exception?**
 
 Generated Gremlin Query:
  g.V().hasLabel('CLASS_DECL').as('class')
@@ -117,8 +112,8 @@ Code Advisor Answer:
 
 These classes form an inheritance chain where `nlohmann::json_abi_v3_11_3::detail::exception` directly inherits from `std::exception`, and the other classes inherit from `nlohmann::json_abi_v3_11_3::detail::exception`.
 
-*Conclusion* I don't understand this one. The query has no string "exception". 
-*Conclusion* Recursive relations can be found.
+**Conclusion** I don't understand this one. The query has no string "exception". 
+**Conclusion** Recursive relations can be found.
 
 4) User prompt:
  list me all functions (including template) to_json overloads and list of their parameters
@@ -133,19 +128,19 @@ Generated Gremlin Query:
 Code Advisor Answer:
  Here is a list of all `to_json` function overloads along with their parameters:
 
-**Function:** `to_json`
-   - **Parameters:** `j`, `b`
-   - **File:** `include_nlohmann_detail_conversions_to_json.hpp`
-   - **Line:** 265
+Function: `to_json`
+   - Parameters: `j`, `b`
+   - File: `include_nlohmann_detail_conversions_to_json.hpp`
+   - Line: 265
 
-**Function:** `to_json`
-   - **Parameters:** `j`, `b`
-   - **File:** `include_nlohmann_detail_conversions_to_json.hpp`
-   - **Line:** 278
+Function: `to_json`
+   - Parameters: `j`, `b`
+   - File: `include_nlohmann_detail_conversions_to_json.hpp`
+   - Line: 278
 
-... and 18 more functions...
+... and 18 more functions in the output message...
 
-*Conclusion* Still quite some work to do for fully working system, i.e. system message for the answer-generating LLM has to be fine-tuned (no need to spam with filenames); system message for the query composing LLM has to be fine-tuned - teach it that functions and template functions are similar concepts, etc .... 
+**Conclusion** Still quite some work to do for fully working system, i.e. system message for the answer-generating LLM has to be fine-tuned (no need to spam with filenames); system message for the query composing LLM has to be fine-tuned - teach it that functions and template functions are similar concepts, etc .... 
   
 ## Usage
 
@@ -156,7 +151,11 @@ Code Advisor Answer:
 - Retrieve details about specific code elements or patterns within the codebase (e.g., functions containing a specific substring).
 
 - Navigate relationships in the codebase, such as class inheritance or method definitions.
-  
+
+### Future Use Cases:
+
+- AI Agent/Assitant that does the refactoring for you
+
 ## Setup
 
 ### Prerequisites
